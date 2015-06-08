@@ -2,6 +2,9 @@
 using System.Collections;
 
 public class SideCollider : MonoBehaviour {
+    public int XMultiplier;
+    public int YMultiplier;
+    public GameObject AsteriodPrefab;
 
 	// Use this for initialization
 	void Start () {
@@ -19,10 +22,14 @@ public class SideCollider : MonoBehaviour {
         if (other.tag == "Asteroid" || other.tag == "Player" || other.tag == "PlayerBullet")
         {
             //...get the other object's position...
+            UnityEngine.Debug.Log(string.Format("Position before: x={0}, y={1}", other.transform.position.x, AsteriodPrefab.transform.position.y));
             Vector3 pos = other.transform.position;
-            pos.x *= -1;
-            pos.y *= -1;
+            if (XMultiplier != 0)
+                pos.x = -pos.x + XMultiplier * other.bounds.size.x / 2;
+            if (YMultiplier != 0)
+                pos.y = -pos.y + YMultiplier * other.bounds.size.y / 2;
             other.transform.position = pos;
+            UnityEngine.Debug.Log(string.Format("Position after: x={0}, y={1}", other.transform.position.x, AsteriodPrefab.transform.position.y));
         }
     }
 }

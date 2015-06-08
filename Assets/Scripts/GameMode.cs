@@ -6,9 +6,11 @@ public class GameMode : MonoBehaviour {
 
     public static GameMode Current;			//A public static reference to itself (game mode should be singleton)
     public GameObject PlayerPrefab;			//The player ship
+    public GameObject PlayerLifePrefab;			//The player ship
     public GameObject AsteroidPrefab;		//the column game object
     public int AsteroidsToSpawn;            //The number of asteroids on the first level
     public int InitialAsteroidScore;        // Score for biggest asteroid (each lesser will give 2x scores)
+    public int PlayerLives;
 
     private int level;                              //Current level
     private int score;                              //The current score
@@ -18,6 +20,11 @@ public class GameMode : MonoBehaviour {
     private string highScoreKey = "highScore";		//Name of the high score
     private Vector2 screenSize;
     private int totalAsteroids;
+    private List<GameObject> playerLivesHUD;
+    private int playerCurrentLives;
+    private float timeInDeath;
+    private float respawnTime;
+    private float playerSafeDistance;
 
     private GUIText currentScoreText;
     private GUIText gameStateText;
@@ -32,6 +39,7 @@ public class GameMode : MonoBehaviour {
         InMenu,
         SpawnAsteroids,
         GameInProgress,
+        LifeLost,
         RespawnAsteroids,
         GameOver,
     }
@@ -66,9 +74,23 @@ public class GameMode : MonoBehaviour {
 
     public void PlayerDestroyed()
     {
-        gameStateText.text = "GAME OVER, PRESS R TO RESET";
-        gameStateText.enabled = true;
-        gameState = GameState.GameOver;
+        if (playerCurrentLives > 0)
+        {
+            playerLivesHUD[playerCurrentLives - 1].SetActive(false);            
+            playerCurrentLives -= 1;
+            if (playerCurrentLives > 0)
+            {
+                gameState = GameState.LifeLost;
+            }
+            else
+            {
+                gameStateText.text = "GAME OVER, PRESS R TO RESET";
+                gameStateText.enabled = true;
+                gameState = GameState.GameOver;
+            }
+        }
+        timeInDeath = 0.0f;
+        
     }
 
     void Awake()
@@ -84,6 +106,9 @@ public class GameMode : MonoBehaviour {
 	void Start() 
     {
         score = 0;
+        respawnTime = 3;
+        timeInDeath = 0;
+        playerCurrentLives = PlayerLives;
         textBlinkingDelta = 0.5f;
         asteroidsOnCurrentLevel = AsteroidsToSpawn;
         screenSize = Camera.main.ViewportToScreenPoint(new Vector3(1, 1, 0));      
@@ -96,6 +121,11 @@ public class GameMode : MonoBehaviour {
         ySpawnLimits.Add(new Vector2(0, 0.25f));
         ySpawnLimits.Add(new Vector2(0.75f, 1.0f));
 
+        var playerTransform = PlayerPrefab.GetComponent<Transform>();
+        var playerRenderer = PlayerPrefab.GetComponent<SpriteRenderer>();
+        playerSafeDistance = playerRenderer.bounds.size.y * playerTransform.localScale.y * 3;
+        UnityEngine.Debug.Log(string.Format("playerSafeDistance = {0}", playerSafeDistance));
+
         GameObject scoreTextObject = new GameObject("ScoreText");
         currentScoreText = scoreTextObject.AddComponent<GUIText>();
         currentScoreText.gameObject.transform.position = new Vector3(0.1f, 0.95f, 0.0f);
@@ -107,12 +137,20 @@ public class GameMode : MonoBehaviour {
         gameStateText.GetComponent<GUIText>().alignment = TextAlignment.Center;
         gameStateText.GetComponent<GUIText>().anchor = TextAnchor.MiddleCenter;
         InitLevel();
+        SpawnLifeHUD();
 	}
 	
 	// Update is called once per frame
 	void Update () 
     {
-	
+	    switch (gameState)
+        {
+            case GameState.LifeLost:
+                CheckForRespawn();
+                break;
+            default:
+                break;
+        }
 	}
 
     void FixedUpdate()
@@ -131,7 +169,8 @@ public class GameMode : MonoBehaviour {
                     }
                     break;
                 case GameState.GameInProgress:
-                case GameState.GameOver:                    
+                case GameState.GameOver:                                        
+                case GameState.LifeLost:
                     break;
                 case GameState.RespawnAsteroids:
                     {
@@ -174,7 +213,39 @@ public class GameMode : MonoBehaviour {
         score = 0;
         currentScoreText.text = "0";
         asteroidsOnCurrentLevel = AsteroidsToSpawn;
+        playerCurrentLives = PlayerLives;
         level = 0;
+        for (int i = 0; i < playerLivesHUD.Count; i++)
+        {
+            playerLivesHUD[i].SetActive(true);
+        }
+    }
+
+    void CheckForRespawn()
+    {
+        timeInDeath += Time.deltaTime;
+        if (timeInDeath > respawnTime && IsSafeForRespawn())
+        {
+            SpawnPlayer();
+            gameState = GameState.GameInProgress;
+        }
+    }
+
+    bool IsSafeForRespawn()
+    {
+        
+        GameObject[] asteroids = GameObject.FindGameObjectsWithTag("Asteroid");
+        Vector3 respawnPosition = new Vector3(0.0f, 0.0f, 0.0f);
+        for (int i = 0; i < asteroids.Length; i++)
+        {
+            Vector3 asteroidPosition = asteroids[i].transform.position;
+            float distance = (asteroidPosition - respawnPosition).magnitude;
+            if (distance < playerSafeDistance)
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     void Initialize()
@@ -188,7 +259,8 @@ public class GameMode : MonoBehaviour {
     void SpawnPlayer()
     {
         var spawnPointInWorldCoord = new Vector3(0.5f, 0.5f, -Camera.main.transform.position.z);
-        var player = (GameObject)Instantiate(PlayerPrefab, Camera.main.ViewportToWorldPoint(spawnPointInWorldCoord), new Quaternion(0.0f, 0.0f, -90.0f, 0.0f));
+        var player = (GameObject)Instantiate(PlayerPrefab, Vector3.zero, Quaternion.identity);
+        //var player = (GameObject)Instantiate(PlayerPrefab, Camera.main.ViewportToWorldPoint(spawnPointInWorldCoord), new Quaternion(0.0f, 0.0f, 0.0f, 0.0f));
         player.SetActive(true);
     }
 
@@ -205,6 +277,25 @@ public class GameMode : MonoBehaviour {
             asteroid.DivideAfterHit = true;
             asteroid.DivideTimes = 2;
             asteroid.Score = 50;
+        }
+    }
+
+    void SpawnLifeHUD()
+    {
+        var renderer = PlayerLifePrefab.GetComponent<SpriteRenderer>();
+        var playerLifeTransform = PlayerLifePrefab.GetComponent<Transform>();
+        if (renderer != null && playerLifeTransform != null)
+        {           
+            playerLivesHUD = new List<GameObject>(0);
+            for (int i = 0; i < playerCurrentLives; i++)
+            {
+                float shift = i * renderer.bounds.size.x * playerLifeTransform.localScale.x;
+                GameObject hudLife = (GameObject)GameObject.Instantiate(PlayerLifePrefab);
+                Vector3 position = Camera.main.ViewportToWorldPoint(new Vector3(0.08f + shift, 0.9f, 0.0f));
+                position.z = 0.0f;
+                hudLife.transform.position = position;
+                playerLivesHUD.Add(hudLife);
+            }
         }
     }
 
