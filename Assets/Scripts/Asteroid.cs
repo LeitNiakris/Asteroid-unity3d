@@ -11,9 +11,9 @@ public class Asteroid : MonoBehaviour {
     public GameObject AsteroidPerfab;
     public int Score;
 
-    bool isAlive;
-    int points;
-    Vector3 rotationAxis;
+    private bool isAlive;
+    private int points;
+    private Vector3 rotationAxis;
 
     void OnEnable()
     {
@@ -83,7 +83,6 @@ public class Asteroid : MonoBehaviour {
         {
             gameObject.GetComponent<PolygonCollider2D>().enabled = false;
             Destroy(gameObject);
-            //Destroy(gameObject, gameObject.GetComponent<AudioSource>().clip.length);
         }
     }
 }
